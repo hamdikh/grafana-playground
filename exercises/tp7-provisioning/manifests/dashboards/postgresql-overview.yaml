@@ -1,0 +1,74 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-postgresql-overview
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "PostgreSQL"
+data:
+  postgresql-overview.json: |
+    {
+      "uid": "pg-lab-overview",
+      "title": "PostgreSQL-Lab overview",
+      "tags": ["tp4", "postgresql", "as-code"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-6h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "host",
+            "type": "query",
+            "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-lab" },
+            "query": "SELECT DISTINCT host FROM metrics ORDER BY host",
+            "multi": true,
+            "includeAll": true,
+            "refresh": 1
+          },
+          {
+            "name": "seuil",
+            "type": "textbox",
+            "current": { "value": "80" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Moyenne glissante CPU (fenetre 10 points)",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-lab" },
+          "fieldConfig": {
+            "defaults": { "unit": "percent" },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "time_series",
+              "rawSql": "SELECT ts AS time, host AS metric, avg(cpu) OVER (PARTITION BY host ORDER BY ts ROWS BETWEEN 9 PRECEDING AND CURRENT ROW) AS value FROM metrics WHERE $__timeFilter(ts) AND host IN ($host) ORDER BY ts"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "table",
+          "title": "Percentile 95 par hote (au-dessus du seuil)",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 9 },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-lab" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawSql": "SELECT host AS \"Hote\", round(avg(cpu), 2) AS \"CPU moyen\", round(percentile_cont(0.95) WITHIN GROUP (ORDER BY cpu)::numeric, 2) AS \"CPU p95\" FROM metrics WHERE $__timeFilter(ts) GROUP BY host HAVING avg(cpu) > $seuil ORDER BY 3 DESC"
+            }
+          ]
+        }
+      ]
+    }

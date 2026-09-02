@@ -1,0 +1,75 @@
+---
+# Reuses the exact Group/Host/Item selectors from TP5 mission 5 ("Items
+# serveur" panel) — the built-in Zabbix server host and its own
+# self-monitoring items, since TP5 doesn't seed a custom hostgroup the way
+# the homelab's zeus-lab/zabbix does.
+#
+# Caveat found on a live cluster (homelab-plateform, same plugin family):
+# non-Metrics query types (Problems=2) got rejected outright over
+# /api/ds/query ("non-metrics queries are not supported") on that plugin
+# build. The Triggers panel below (queryType 3) wasn't re-tested against
+# *this* plugin/version — if it comes up empty or errors, that's most
+# likely the same limitation; fall back to a second Metrics (queryType 0)
+# panel instead, same as dashboards/zabbix-overview.yaml did in
+# homelab-plateform after hitting exactly this.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-zabbix-overview
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "Zabbix"
+data:
+  zabbix-overview.json: |
+    {
+      "uid": "zabbix-lab-overview",
+      "title": "Zabbix overview",
+      "tags": ["tp5", "zabbix", "as-code"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Items serveur (Zabbix*)",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix" },
+              "queryType": "0",
+              "group": { "filter": "Zabbix servers" },
+              "host": { "filter": "Zabbix server" },
+              "application": { "filter": "" },
+              "item": { "filter": "/Zabbix.*/" },
+              "functions": [{ "def": { "name": "groupBy" }, "params": ["1m", "avg"] }]
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Triggers en Problem",
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 9 },
+          "datasource": { "type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix" },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": { "type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix" },
+              "queryType": "3",
+              "group": { "filter": "Zabbix servers" },
+              "host": { "filter": "/.*/" },
+              "application": { "filter": "" },
+              "trigger": { "filter": "/.*/" },
+              "options": { "count": true }
+            }
+          ]
+        }
+      ]
+    }

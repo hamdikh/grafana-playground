@@ -106,6 +106,37 @@ autre instance échoue sur un conflit de version.
 - Le dashboard IaC apparaît dans le bon folder sans action manuelle.
 - Le compte Viewer ne voit pas les dashboards des autres folders.
 
+## Bonus — dashboards TP3/TP4/TP5 entièrement en code
+
+Trois dashboards supplémentaires, un par datasource SQL/Zabbix des TP
+précédents, chacun avec ses requêtes écrites en clair dans le YAML — pas de
+raccourci "cliqué dans l'UI puis exporté" : ce que vous lisez dans le
+fichier est exactement ce qui s'exécute.
+
+```bash
+kubectl --context kind-grafana-lab apply -f manifests/dashboards/mysql-overview.yaml
+kubectl --context kind-grafana-lab apply -f manifests/dashboards/postgresql-overview.yaml
+kubectl --context kind-grafana-lab apply -f manifests/dashboards/zabbix-overview.yaml
+```
+
+| Fichier | Folder | Requêtes |
+|---|---|---|
+| `dashboards/mysql-overview.yaml` | MySQL | CPU par hôte (`$__timeGroup`), table des incidents |
+| `dashboards/postgresql-overview.yaml` | PostgreSQL | moyenne glissante (fonction fenêtre), p95 par hôte au-dessus d'un seuil (variable `$seuil`) |
+| `dashboards/zabbix-overview.yaml` | Zabbix | items serveur (Metrics), triggers en Problem — voir le commentaire du fichier sur une limite du plugin observée en conditions réelles |
+
+Chacun réutilise exactement les requêtes SQL des missions TP3/TP4 et le
+sélecteur Group/Host/Item de la mission 5 du TP5 — rien de nouveau à
+apprendre côté requête, seulement où elle vit (Git, pas la souris).
+
+Ces mêmes trois dashboards, plus un quatrième multi-datasources (Prometheus,
+MySQL, PostgreSQL, Zabbix, Loki, CSV/JSON via Infinity dans un seul écran,
+avec plusieurs types de visualisation — stat, gauge, barchart, piechart,
+logs, pas seulement timeseries/table), existent aussi côté
+`homelab-plateform` (`infrastructure/baseline/monitoring/dashboards/`) —
+mêmes principes, sur un vrai cluster de production plutôt qu'un kind
+jetable.
+
 ## Pour aller plus loin
 
 Comparer les quatre approches ci-dessus en pratique. Installer

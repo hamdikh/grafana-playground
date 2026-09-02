@@ -1,0 +1,73 @@
+---
+# Bonus TP7 example: a dashboard defined *entirely* as code — every panel,
+# every query, in Git, nothing built by clicking in the UI. Lands in the
+# "MySQL" folder (grafana_folder annotation, sidecar.dashboards.provider
+# foldersFromFilesStructure: true in values/grafana-values.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-mysql-overview
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "MySQL"
+data:
+  mysql-overview.json: |
+    {
+      "uid": "mysql-lab-overview",
+      "title": "MySQL-Lab overview",
+      "tags": ["tp3", "mysql", "as-code"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-6h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "host",
+            "type": "query",
+            "datasource": { "type": "mysql", "uid": "mysql-lab" },
+            "query": "SELECT DISTINCT host FROM metrics ORDER BY host",
+            "multi": true,
+            "includeAll": true,
+            "refresh": 1
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "CPU par hote",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "mysql", "uid": "mysql-lab" },
+          "fieldConfig": {
+            "defaults": { "unit": "percent", "min": 0, "max": 100 },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "time_series",
+              "rawSql": "SELECT $__timeGroup(ts, $__interval) AS time, host AS metric, AVG(cpu) AS value FROM metrics WHERE $__timeFilter(ts) AND host IN ($host) GROUP BY 1, host ORDER BY 1"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "table",
+          "title": "Incidents recents",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 9 },
+          "datasource": { "type": "mysql", "uid": "mysql-lab" },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "table",
+              "rawSql": "SELECT opened_at AS `Date`, host AS `Hote`, severity AS `Severite`, title AS `Titre` FROM incidents WHERE $__timeFilter(opened_at) ORDER BY opened_at DESC"
+            }
+          ]
+        }
+      ]
+    }
