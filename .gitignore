@@ -1,0 +1,4 @@
+# Rendered from *.tpl.yaml — contains real webhook URLs, never commit.
+exercises/extension-multichannel-alerting/alerting-provisioning.yaml
+exercises/extension-multichannel-alerting/alerting-configmap.yaml
+.env

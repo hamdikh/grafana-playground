@@ -1,0 +1,18 @@
+---
+# Standalone, jetable, isolated from any other cluster. `kind create cluster
+# --config kind-config.yaml` creates context `kind-grafana-lab` only — it
+# never touches an existing kubeconfig context.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: grafana-lab
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Grafana
+      - containerPort: 30000
+        hostPort: 3000
+        protocol: TCP
+      # Zabbix frontend (TP5, optional)
+      - containerPort: 30001
+        hostPort: 8080
+        protocol: TCP

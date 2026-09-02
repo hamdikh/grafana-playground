@@ -1,0 +1,5 @@
+host,env,cpu,mem
+web01,prod,72,61
+web02,prod,45,58
+db01,prod,88,79
+web03,staging,12,30

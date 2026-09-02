@@ -1,0 +1,25 @@
+---
+# TP7 mission 1: datasource provisioned as code, picked up by the
+# grafana-sc-datasources sidecar (see values/grafana-values.yaml sidecar.datasources).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ds-pg-iac
+  namespace: observability
+  labels:
+    grafana_datasource: "1"
+data:
+  pg-iac.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: PG-IaC
+        uid: pg-iac
+        type: grafana-postgresql-datasource
+        url: postgres.lab.svc.cluster.local:5432
+        user: grafana
+        secureJsonData:
+          password: grafanapass
+        jsonData:
+          database: metricsdb
+          sslmode: disable
+          postgresVersion: 1600

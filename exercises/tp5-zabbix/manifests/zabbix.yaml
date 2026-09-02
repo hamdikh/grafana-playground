@@ -1,0 +1,223 @@
+---
+# Optional, heavy (~1.5 Go RAM). Not applied by `helmfile apply` by default —
+# see README.md / bootstrap.sh zabbix.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zabbix
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zabbix-db
+  namespace: zabbix
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: rootpass
+  MYSQL_DATABASE: zabbix
+  MYSQL_USER: zabbix
+  MYSQL_PASSWORD: zabbixpass
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zabbix-mysql
+  namespace: zabbix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zabbix-mysql
+  template:
+    metadata:
+      labels:
+        app: zabbix-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          args:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_bin
+            - --log-bin-trust-function-creators=1
+          envFrom:
+            - secretRef:
+                name: zabbix-db
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zabbix-mysql
+  namespace: zabbix
+spec:
+  selector:
+    app: zabbix-mysql
+  ports:
+    - port: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zabbix-server
+  namespace: zabbix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zabbix-server
+  template:
+    metadata:
+      labels:
+        app: zabbix-server
+    spec:
+      containers:
+        - name: server
+          image: zabbix/zabbix-server-mysql:alpine-7.0-latest
+          env:
+            - name: DB_SERVER_HOST
+              value: zabbix-mysql
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_DATABASE }
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_USER }
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_PASSWORD }
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_ROOT_PASSWORD }
+          ports:
+            - containerPort: 10051
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zabbix-server
+  namespace: zabbix
+spec:
+  selector:
+    app: zabbix-server
+  ports:
+    - port: 10051
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zabbix-web
+  namespace: zabbix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zabbix-web
+  template:
+    metadata:
+      labels:
+        app: zabbix-web
+    spec:
+      containers:
+        - name: web
+          image: zabbix/zabbix-web-nginx-mysql:alpine-7.0-latest
+          env:
+            - name: ZBX_SERVER_HOST
+              value: zabbix-server
+            - name: DB_SERVER_HOST
+              value: zabbix-mysql
+            - name: PHP_TZ
+              value: Europe/Paris
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_DATABASE }
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_USER }
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: zabbix-db, key: MYSQL_PASSWORD }
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zabbix-web
+  namespace: zabbix
+spec:
+  type: NodePort
+  selector:
+    app: zabbix-web
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zabbix-agent
+  namespace: zabbix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zabbix-agent
+  template:
+    metadata:
+      labels:
+        app: zabbix-agent
+    spec:
+      containers:
+        - name: agent
+          image: zabbix/zabbix-agent2:alpine-7.0-latest
+          env:
+            - name: ZBX_SERVER_HOST
+              value: zabbix-server
+            # Kubernetes does not rewrite pod-to-pod source IPs to the
+            # Service IP, so the agent's default allowlist-by-name can never
+            # match the server's real pod IP. ZBX_PASSIVESERVERS (not
+            # ZBX_SERVER_HOST, which also feeds ServerActive and rejects
+            # CIDR notation) is the variable that loosens the passive-check
+            # allowlist without breaking active checks.
+            - name: ZBX_PASSIVESERVERS
+              value: "0.0.0.0/0"
+            - name: ZBX_HOSTNAME
+              value: "Zabbix server"
+          ports:
+            - containerPort: 10050
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zabbix-agent
+  namespace: zabbix
+spec:
+  selector:
+    app: zabbix-agent
+  ports:
+    - port: 10050

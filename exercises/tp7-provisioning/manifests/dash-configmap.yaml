@@ -1,0 +1,71 @@
+---
+# TP7 mission 2: dashboard provisioned as code, picked up by the
+# grafana-sc-dashboard sidecar. Once applied, the dashboard is read-only in
+# the UI ("provisioned dashboard") — that's the point of the mission.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dash-cpu-iac
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "Formation IaC"
+data:
+  cpu-iac.json: |
+    {
+      "uid": "cpu-iac",
+      "title": "CPU par hote (IaC)",
+      "tags": ["formation", "iac", "postgres"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-6h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "host",
+            "type": "query",
+            "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-iac" },
+            "query": "SELECT DISTINCT host FROM metrics ORDER BY host",
+            "multi": true,
+            "includeAll": true,
+            "refresh": 1
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "CPU moyen",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "pg-iac" },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT $__timeGroup(ts, $__interval) AS time, host AS metric, avg(cpu) AS value FROM metrics WHERE $__timeFilter(ts) AND host IN ($host) GROUP BY 1, host ORDER BY 1"
+            }
+          ]
+        }
+      ]
+    }

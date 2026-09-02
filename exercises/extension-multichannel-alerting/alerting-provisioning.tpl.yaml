@@ -1,0 +1,77 @@
+---
+# Template for the TP6 extension (docs/EXTENSION-multichannel-alerting.md).
+# Never commit the rendered file — it contains real webhook URLs. Render it
+# with alerting/render.sh, which reads SLACK_WEBHOOK_URL and
+# TEAMS_WORKFLOW_URL from the environment and writes
+# alerting/alerting-provisioning.yaml (gitignored).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: email-ops
+    receivers:
+      - uid: cp-email
+        type: email
+        settings:
+          addresses: ops@formation.local
+          subject: '{{ template "tp.title" . }}'
+          message: '{{ template "tp.message" . }}'
+  - orgId: 1
+    name: slack-alerts
+    receivers:
+      - uid: cp-slack
+        type: slack
+        settings:
+          url: SLACK_WEBHOOK_URL
+          title: '{{ template "tp.title" . }}'
+          text: '{{ template "tp.message" . }}'
+  - orgId: 1
+    name: teams-alerts
+    receivers:
+      - uid: cp-teams
+        type: teams
+        settings:
+          url: TEAMS_WORKFLOW_URL
+          title: '{{ template "tp.title" . }}'
+          message: '{{ template "tp.message" . }}'
+
+policies:
+  - orgId: 1
+    receiver: email-ops
+    group_by: [alertname, host]
+    group_wait: 10s
+    group_interval: 30s
+    repeat_interval: 5m
+    routes:
+      - receiver: teams-alerts
+        object_matchers:
+          - [severity, "=", critical]
+        continue: true
+      - receiver: email-ops
+        object_matchers:
+          - [severity, "=", critical]
+        continue: true
+      - receiver: slack-alerts
+        object_matchers:
+          - [severity, "=", warning]
+
+templates:
+  - orgId: 1
+    name: tp-templates
+    # This file is synced verbatim into /etc/grafana/provisioning/alerting by
+    # the k8s-sidecar container (grafana_alerting label), not run through
+    # Helm's `tpl` — so, unlike values/grafana-values.yaml's own
+    # provisioning blocks, the `{{ }}` below need NO backtick escaping.
+    template: |
+      {{ define "tp.title" }}[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }}){{ end }}
+
+      {{ define "tp.message" }}
+      {{ len .Alerts.Firing }} alerte(s) active(s) et {{ len .Alerts.Resolved }} resolue(s)
+      {{ range .Alerts }}
+      Hote : {{ .Labels.host }}
+      Valeur mesuree : {{ index .Values "B" }}
+      Resume : {{ .Annotations.summary }}
+      Dashboard : {{ .DashboardURL }}
+      Silence : {{ .SilenceURL }}
+      {{ end }}
+      {{ end }}

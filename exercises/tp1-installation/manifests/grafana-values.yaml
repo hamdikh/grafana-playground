@@ -1,0 +1,123 @@
+---
+adminUser: admin
+adminPassword: Grafana2025!
+
+image:
+  tag: "11.5.2"
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30000
+
+persistence:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+plugins:
+  - alexanderzobnin-zabbix-app
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    searchNamespace: ALL
+    folderAnnotation: grafana_folder
+    provider:
+      foldersFromFilesStructure: true
+  datasources:
+    enabled: true
+    label: grafana_datasource
+    labelValue: "1"
+    searchNamespace: ALL
+  # Lets provisioning/alerting-configmap.yaml (rendered by alerting/render.sh)
+  # deliver contact points / policies / templates the same GitOps way as
+  # dashboards and datasources — used by the multichannel alerting
+  # extension, see docs/EXTENSION-multichannel-alerting.md.
+  alerts:
+    enabled: true
+    label: grafana_alerting
+    labelValue: "1"
+    searchNamespace: ALL
+
+# Base datasource set — TestData needs nothing else running. MySQL-Lab,
+# PostgreSQL-Lab and Zabbix show as unhealthy until their manifests are
+# applied (manifests/mysql.yaml, manifests/postgres.yaml, manifests/zabbix.yaml)
+# — that's expected, not a misconfiguration.
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: TestData
+        uid: testdata
+        type: grafana-testdata-datasource
+        isDefault: true
+
+      - name: MySQL-Lab
+        uid: mysql-lab
+        type: mysql
+        url: mysql.lab.svc.cluster.local:3306
+        database: metricsdb
+        user: grafana
+        secureJsonData:
+          password: grafanapass
+        jsonData:
+          maxOpenConns: 10
+          maxIdleConns: 5
+          connMaxLifetime: 14400
+          timezone: UTC
+
+      - name: PostgreSQL-Lab
+        uid: pg-lab
+        type: grafana-postgresql-datasource
+        url: postgres.lab.svc.cluster.local:5432
+        user: grafana
+        secureJsonData:
+          password: grafanapass
+        jsonData:
+          database: metricsdb
+          sslmode: disable
+          postgresVersion: 1600
+          timescaledb: false
+          maxOpenConns: 10
+
+      - name: Zabbix
+        uid: zabbix
+        type: alexanderzobnin-zabbix-datasource
+        url: http://zabbix-web.zabbix.svc.cluster.local:8080/api_jsonrpc.php
+        jsonData:
+          username: Admin
+          trends: true
+          trendsFrom: "7d"
+          trendsRange: "4d"
+          cacheTTL: "1h"
+        secureJsonData:
+          password: zabbix
+
+grafana.ini:
+  users:
+    default_theme: dark
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+  date_formats:
+    default_timezone: Europe/Paris
+
+# MailHog SMTP (manifests/alerting.yaml) — lets the email contact point in
+# the alerting extension "send" real mail without a real mail server.
+# https://mailhog... isn't exposed outside the cluster; use
+# `kubectl -n lab port-forward svc/mailhog 8025:8025` and open
+# http://localhost:8025.
+env:
+  GF_SMTP_ENABLED: "true"
+  GF_SMTP_HOST: "mailhog.lab.svc.cluster.local:1025"
+  GF_SMTP_FROM_ADDRESS: "grafana@lab.local"
+  GF_SMTP_FROM_NAME: "Grafana Lab"
+  GF_SMTP_SKIP_VERIFY: "true"

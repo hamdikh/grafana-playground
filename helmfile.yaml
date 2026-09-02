@@ -1,0 +1,44 @@
+---
+# Declarative alternative to bootstrap.sh: `helmfile apply` installs Grafana
+# and, via presync hooks, applies every plain-manifest exercise (mysql,
+# postgres, zabbix, alerting/mailhog). Everything is pinned to the
+# kind-grafana-lab context — this never touches any other kubeconfig context.
+#
+#   kind create cluster --config kind-config.yaml
+#   helmfile apply
+#   helmfile destroy   # tears the Helm release down; `kind delete cluster
+#                       # --name grafana-lab` removes everything else at once
+repositories:
+  - name: grafana
+    url: https://grafana.github.io/helm-charts
+
+helmDefaults:
+  kubeContext: kind-grafana-lab
+  wait: true
+  timeout: 300
+
+releases:
+  - name: grafana
+    namespace: observability
+    createNamespace: true
+    chart: grafana/grafana
+    values:
+      - values/grafana-values.yaml
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: kubectl
+        args:
+          - --context
+          - kind-grafana-lab
+          - apply
+          - -f
+          - exercises/tp3-mysql/manifests/mysql.yaml
+          - -f
+          - exercises/tp4-postgresql/manifests/postgres.yaml
+          - -f
+          - exercises/tp6-alerting/manifests/alerting.yaml
+      # Zabbix is intentionally not in the default presync hook — it's the
+      # heaviest piece (~1.5GB RAM) and TP5 treats it as opt-in, same as the
+      # original course's bootstrap.sh. Apply it explicitly:
+      #   kubectl --context kind-grafana-lab apply -f exercises/tp5-zabbix/manifests/zabbix.yaml

@@ -1,0 +1,127 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: lab
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: rootpass
+  MYSQL_DATABASE: metricsdb
+  MYSQL_USER: grafana
+  MYSQL_PASSWORD: grafanapass
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-initdb
+  namespace: lab
+data:
+  01-schema.sql: |
+    SET SESSION cte_max_recursion_depth = 100000;
+
+    CREATE TABLE IF NOT EXISTS metrics (
+      id   INT AUTO_INCREMENT PRIMARY KEY,
+      ts   DATETIME NOT NULL,
+      host VARCHAR(32) NOT NULL,
+      env  VARCHAR(16) NOT NULL,
+      cpu  DECIMAL(5,2) NOT NULL,
+      mem  DECIMAL(5,2) NOT NULL,
+      INDEX idx_ts (ts),
+      INDEX idx_host (host)
+    );
+
+    INSERT INTO metrics (ts, host, env, cpu, mem)
+    WITH RECURSIVE seq AS (
+      SELECT 0 AS n
+      UNION ALL
+      SELECT n + 1 FROM seq WHERE n < 2879
+    )
+    SELECT
+      NOW() - INTERVAL seq.n MINUTE,
+      h.host,
+      h.env,
+      ROUND(30 + RAND() * 60, 2),
+      ROUND(40 + RAND() * 50, 2)
+    FROM seq
+    CROSS JOIN (
+      SELECT 'web01' AS host, 'prod' AS env
+      UNION ALL SELECT 'web02', 'prod'
+      UNION ALL SELECT 'db01',  'prod'
+      UNION ALL SELECT 'web03', 'staging'
+    ) h;
+
+    CREATE TABLE IF NOT EXISTS incidents (
+      id        INT AUTO_INCREMENT PRIMARY KEY,
+      opened_at DATETIME NOT NULL,
+      host      VARCHAR(32) NOT NULL,
+      severity  VARCHAR(16) NOT NULL,
+      title     VARCHAR(128) NOT NULL
+    );
+
+    INSERT INTO incidents (opened_at, host, severity, title) VALUES
+      (NOW() - INTERVAL 6 HOUR,  'web01', 'warning',  'Latence HTTP elevee'),
+      (NOW() - INTERVAL 4 HOUR,  'db01',  'critical', 'Saturation disque'),
+      (NOW() - INTERVAL 2 HOUR,  'web02', 'info',     'Redemarrage planifie'),
+      (NOW() - INTERVAL 30 MINUTE,'db01', 'warning',  'Slow query detectee');
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          envFrom:
+            - secretRef:
+                name: mysql-secret
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+            - name: data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+      volumes:
+        - name: initdb
+          configMap:
+            name: mysql-initdb
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: lab
+spec:
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
