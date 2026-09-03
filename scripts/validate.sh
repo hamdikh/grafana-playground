@@ -127,10 +127,16 @@ if deployed zabbix zabbix-web; then
     if deployed zabbix "$d"; then check "$d available"; else nope "$d available" "kubectl -n zabbix get deploy $d"; fi
   done
   assert "Zabbix frontend answers on $ZABBIX_URL" curl -sSf --max-time 20 -o /dev/null "$ZABBIX_URL"
+  # Enabling the app is TP5 mission 1, so a disabled plugin is the expected
+  # starting state, not a broken machine. The datasource cannot report
+  # healthy until it's on, so skip that too rather than fail twice.
   if gapi /api/plugins/alexanderzobnin-zabbix-app/settings | jq -e '.enabled == true' >/dev/null 2>&1; then
     check "Zabbix Grafana plugin enabled"
-  else nope "Zabbix Grafana plugin enabled" "enable it in Grafana > Plugins > Zabbix"; fi
-  ds_health zabbix Zabbix zabbix zabbix-web
+    ds_health zabbix Zabbix zabbix zabbix-web
+  else
+    absent "Zabbix Grafana plugin enabled" "not yet — TP5 has you enable it in Grafana > Plugins > Zabbix"
+    absent "Zabbix datasource healthy" "blocked until the plugin is enabled"
+  fi
 else absent "Zabbix checks" "deploy/zabbix-web not up — run ./exercises/tp5-zabbix/run.sh (needs ~1.5G RAM)"; fi
 
 section "TP6 — Alerting"
@@ -168,7 +174,8 @@ if [ -f exercises/extension-multichannel-alerting/alerting-provisioning.tpl.yaml
 else nope "alerting template present" "alerting-provisioning.tpl.yaml missing"; fi
 
 section "Repo hygiene"
-for f in bootstrap.sh scripts/*.sh exercises/*/*.sh; do
+# lib.sh is sourced, never invoked, so it deliberately has no +x bit.
+for f in bootstrap.sh scripts/validate.sh exercises/*/*.sh; do
   [ -e "$f" ] || continue
   if [ -x "$f" ]; then check "$f executable"; else nope "$f executable" "chmod +x $f"; fi
 done
