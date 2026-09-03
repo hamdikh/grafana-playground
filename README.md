@@ -22,7 +22,13 @@ git clone git@github.com:hamdikh/grafana-playground.git
 cd grafana-playground
 ./bootstrap.sh          # cluster + Grafana + MySQL + PostgreSQL + Zabbix + alerting
 ./bootstrap.sh status   # what's up and how to reach it
+./scripts/validate.sh   # end-to-end check: is this machine ready for a session?
 ```
+
+`scripts/validate.sh` is read-only and deploys nothing. Run it with `pre`
+before bootstrapping to check the prerequisites alone
+(`./scripts/validate.sh pre`). Exercises you haven't run yet are reported
+`SKIP`, not `FAIL`, so a machine without Zabbix still validates clean.
 
 Or exercise by exercise — each one bootstraps everything it depends on:
 
