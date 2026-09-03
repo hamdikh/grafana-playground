@@ -1,7 +1,7 @@
 # Lab manual
 
-The step-by-step manual (missions, SQL, exact click-paths, verified pitfalls)
-lives next to the manifests it describes, one file per exercise:
+The step-by-step manual (concepts, missions, SQL, exact click-paths, verified
+pitfalls) lives next to the manifests it describes, one file per exercise:
 
 - [TP1 — Installation express](../exercises/tp1-installation/README.md)
 - [TP2 — Dashboards & TestData](../exercises/tp2-dashboards/README.md)
@@ -29,6 +29,15 @@ pendant le TP.
 
 Le TP6 doit démarrer tôt : `metrics-feeder` a besoin de quelques minutes de
 collecte avant que les règles d'alerte soient utiles.
+
+Chaque TP ouvre sur une section **Comprendre**, placée juste après `Lancer` :
+le modèle mental et le vocabulaire nécessaires avant de cliquer (format
+attendu par Grafana, rôle des macros SQL, identité d'une instance d'alerte,
+mécanisme sidecar…). Elle est calibrée pour être lue pendant que le
+déploiement tourne, et elle répond point par point aux `Critères de
+réussite` du même fichier — qui demandent d'*expliquer*, pas seulement de
+faire. En animation, c'est le support de la reprise théorique en fin de TP :
+faire reformuler la section plutôt que de la relire.
 
 ## Versions
 

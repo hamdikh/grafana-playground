@@ -9,6 +9,49 @@ de Grafana. **Durée :** 75 min. **Niveau :** avancé.
 ./run.sh   # tp1 + tp3 + manifests/postgres.yaml (même schéma que TP3, en PostgreSQL)
 ```
 
+## Comprendre
+
+Ce TP fait jouer deux rôles sans rapport au même PostgreSQL. Ne pas les
+confondre est l'essentiel de la séance.
+
+| Rôle | Ce que Grafana y fait | Partie |
+|---|---|---|
+| **Datasource** | il *lit* vos données métier pour les afficher | A |
+| **Base interne** (*backend database*) | il *écrit* son propre état : dashboards, utilisateurs, datasources, permissions | B |
+
+### Partie A — ce que Postgres apporte de plus que MySQL
+
+Les macros sont les mêmes qu'au TP3 (`$__timeFilter`, `$__timeGroup`…) et le
+type `timestamptz` évite les conversions epoch. L'intérêt réel est ailleurs :
+les **fonctions fenêtre** (`OVER (PARTITION BY … ORDER BY …)`) calculent une
+valeur par ligne *en fonction des lignes voisines* — moyenne glissante, rang,
+écart au précédent — sans auto-jointure ni post-traitement côté Grafana. Le
+calcul reste là où sont les données.
+
+Et `percentile_cont(0.95)` plutôt que `avg()` : une moyenne dissimule les
+pics, or c'est le pic qui dégrade l'expérience utilisateur. Un serveur à 40 %
+de CPU moyen mais 98 % de p95 est saturé un vingtième du temps. C'est pour
+cette raison que les SLA se formulent en percentiles et jamais en moyennes —
+savoir le justifier fait partie des acquis du TP.
+
+### Partie B — pourquoi la base interne compte
+
+Par défaut, Grafana écrit son état dans un fichier SQLite local au pod. Deux
+conséquences :
+
+- **Pas de haute disponibilité possible.** Deux réplicas, ce serait deux
+  fichiers SQLite indépendants, donc deux Grafana qui divergent
+  immédiatement. Passer sur PostgreSQL est le prérequis technique du
+  multi-replica, pas un raffinement d'architecte.
+- **La bascule n'est pas une migration.** Au démarrage, Grafana applique ses
+  migrations de schéma sur la base qu'on lui désigne : il y crée des tables
+  vides. Il ne lit jamais l'ancien SQLite, et rien ne l'y invite. Tout ce qui
+  n'était pas provisionné par fichier est perdu.
+
+C'est l'argument qui amène directement le TP7 : si l'état durable de votre
+Grafana tient dans des fichiers versionnés, changer de base, de cluster ou de
+version devient un non-événement.
+
 ## Partie A — datasource
 
 Déjà provisionnée (`PostgreSQL-Lab`, uid `pg-lab`). Mêmes macros qu'en

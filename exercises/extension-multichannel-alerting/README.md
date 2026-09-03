@@ -23,6 +23,60 @@ kubectl --context kind-grafana-lab -n lab port-forward svc/mailhog 8025:8025 &
 MailHog est accessible sur http://localhost:8025 et capture tout ce que
 Grafana envoie — aucun compte email réel n'est nécessaire.
 
+## Comprendre
+
+Cette extension ne touche pas à la règle d'alerte : tout se joue en aval,
+dans le routage et la mise en forme.
+
+### Router une même alerte vers plusieurs canaux
+
+Une instance descend l'arbre des routes et s'arrête à la première qui
+correspond — sauf si celle-ci a **Continue matching** activé, auquel cas
+l'évaluation se poursuit sur les routes suivantes du même niveau. C'est le
+seul mécanisme qui permet à une même alerte `critical` d'atteindre Teams *et*
+l'email sans dupliquer la règle. L'ordre des routes compte donc autant que
+leurs matchers.
+
+L'alternative, à connaître pour savoir arbitrer : placer les trois
+intégrations dans un **seul** point de contact. Le résultat visible est le
+même, mais on perd la possibilité d'appliquer des temporisations, des mute
+timings ou des silences différents selon le canal.
+
+### Les templates de notification
+
+Un template est du **Go template** appliqué au payload que Grafana émet — le
+même format que l'Alertmanager de Prometheus. Il ne voit ni votre base ni
+votre requête : uniquement ce que l'évaluation a produit.
+
+| Expression | Contenu |
+|---|---|
+| `.Status` | `firing` ou `resolved`, pour le groupe entier |
+| `.Alerts.Firing` / `.Alerts.Resolved` | les instances, séparées par état |
+| `.CommonLabels` | les labels communs à toutes les instances du groupe |
+| `.Labels.host` | un label d'une instance donnée, dans un `range` |
+| `index .Values "B"` | le résultat de l'expression portant le `refId` `B` |
+| `.DashboardURL`, `.SilenceURL` | liens générés vers Grafana |
+
+`.Values` est indexé par `refId` d'**expression**, pas par nom de colonne :
+renommer ou supprimer une expression dans la règle vide le template
+silencieusement. C'est de loin la première cause de messages à trous.
+
+### Les notifications *resolved*
+
+Quand la condition redevient fausse, Grafana renvoie un message avec
+`.Status = resolved` sur les mêmes canaux. C'est pourquoi le titre se
+construit à partir de `.Status` au lieu d'être écrit en dur : un seul
+template sert aux deux cas. Une chaîne d'alerting qui notifie l'incident mais
+jamais sa résolution laisse les équipes dans le noir — c'est une chaîne à
+moitié faite.
+
+### Pourquoi MailHog
+
+MailHog est un serveur SMTP factice : il accepte tout, ne délivre rien, et
+affiche les messages reçus dans une interface web. Il permet de valider la
+mise en forme et le déclenchement sans compte email réel, sans risque d'envoi
+vers l'extérieur, et sans dépendre du réseau de la salle.
+
 ## Missions
 
 1. Vérifier que le SMTP répond : Alerting > Contact points, éditer

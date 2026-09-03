@@ -9,6 +9,74 @@ cloisonner les accès. **Durée :** 60 min. **Niveau :** avancé.
 ./run.sh   # tout (tp1..tp6) — TP7 lui-même est deux `kubectl apply` que vous faites à la main, voir ci-dessous
 ```
 
+## Comprendre
+
+### Ce que « provisionner » veut dire
+
+Provisionner, c'est déclarer un objet Grafana dans un **fichier** que Grafana
+lit au démarrage et à chaud, au lieu de le créer par l'interface ou par
+l'API. Deux conséquences immédiates :
+
+- **L'objet devient en lecture seule dans l'UI** (bandeau *provisioned*,
+  champs grisés). Ce n'est pas une limitation, c'est la garantie : le fichier
+  est la source de vérité, une modification à la souris serait écrasée au
+  rechargement suivant. La mission 3 vous le fait constater.
+- **L'état cesse de vivre dans la base.** Ce qui est provisionné survit à la
+  perte du pod, au changement de base interne (TP4 partie B) et à la
+  recréation complète du cluster.
+
+### Le mécanisme sidecar, de bout en bout
+
+C'est le chaînon aperçu au TP1, ici utilisé pour de vrai :
+
+```
+ConfigMap labellisée → sidecar (watch sur l'API k8s) → fichier dans /etc/grafana/provisioning/… → Grafana recharge
+```
+
+Chaque type d'objet a son label, déclaré dans `values/grafana-values.yaml` :
+`grafana_datasource`, `grafana_dashboard`, `grafana_alerting`,
+`grafana_plugin`. L'annotation `grafana_folder` sur la ConfigMap décide du
+dossier de destination du dashboard. `searchNamespace: ALL` autorise les
+ConfigMaps de n'importe quel namespace — commode en formation, à restreindre
+en production, puisque quiconque peut créer une ConfigMap peut alors injecter
+un dashboard.
+
+Ce que ça change en pratique : livrer un dashboard devient une pull request
+sur un YAML. La revue de code, l'historique, le rollback et la cohérence
+entre environnements viennent gratuitement avec Git.
+
+**Limite à connaître :** une ConfigMap est plafonnée à environ 1 MiB. Un gros
+dashboard de plusieurs dizaines de panels peut la dépasser — c'est le
+principal argument en faveur du Grafana Operator ou d'un provider fichier
+embarqué dans l'image, comparés plus bas.
+
+### Folders, teams et les limites du RBAC OSS
+
+Le **folder** est l'unité de permission de Grafana : on donne des droits sur
+un dossier, jamais sur un dashboard isolé. Les rôles de l'édition OSS sont
+fixes — *Viewer*, *Editor*, *Admin* — et s'attribuent à un utilisateur ou à
+une **team**, qui n'est qu'un groupe d'utilisateurs.
+
+Ce que l'OSS ne sait pas faire, et qu'il vaut mieux annoncer avant qu'on vous
+le demande : pas de rôles personnalisés, et **pas de permissions sur les
+datasources**. Tout utilisateur pouvant voir un dashboard peut interroger la
+datasource derrière, y compris librement via *Explore*. Cloisonner des
+données sensibles impose donc soit des organisations séparées, soit
+l'édition Enterprise — c'est très souvent le déclencheur du passage payant.
+
+### API et service accounts
+
+Les *API keys* sont dépréciées au profit des **service accounts** : un compte
+non-humain doté d'un rôle, portant un ou plusieurs jetons révocables
+indépendamment les uns des autres. L'authentification se fait par en-tête
+`Authorization: Bearer <token>`.
+
+Pour l'export (mission 8), le `del(.id, .version)` n'est pas cosmétique :
+`id` est la clé primaire *locale* de l'instance d'origine et `version` sert au
+contrôle de concurrence optimiste. Les réimporter ailleurs provoque soit un
+conflit de version, soit l'écrasement d'un dashboard sans aucun rapport qui
+porterait le même `id` sur l'instance cible.
+
 ## Mission 1 — datasource par ConfigMap
 
 ```bash
