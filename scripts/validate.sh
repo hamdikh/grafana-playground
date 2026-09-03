@@ -42,10 +42,14 @@ section "Preflight"
 for tool in docker kubectl helm kind jq curl; do
   if command -v "$tool" >/dev/null 2>&1; then check "$tool installed"; else nope "$tool installed" "not on PATH"; fi
 done
-assert "docker daemon reachable" docker info
+if docker info >/dev/null 2>&1; then check "docker daemon reachable"
+elif [ -S /var/run/docker.sock ]; then
+  nope "docker daemon reachable" "socket exists but $USER can't use it — sudo usermod -aG docker $USER, then log out and back in"
+else nope "docker daemon reachable" "no /var/run/docker.sock — is the daemon started?"; fi
 
-mem_gb=$(awk '/MemTotal/ {printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
-if awk "BEGIN{exit !($mem_gb >= 7.5)}"; then check "RAM ${mem_gb}G (>= 8G)"
+# LC_ALL=C or a fr_FR locale prints "23,5" and every later numeric test blows up.
+mem_gb=$(LC_ALL=C awk '/MemTotal/ {printf "%.1f", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
+if LC_ALL=C awk "BEGIN{exit !($mem_gb >= 7.5)}"; then check "RAM ${mem_gb}G (>= 8G)"
 else nope "RAM ${mem_gb}G (>= 8G)" "Zabbix/TP5 needs ~1.5G — skip tp5 if tight"; fi
 
 disk_gb=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
