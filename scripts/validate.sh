@@ -127,16 +127,13 @@ if deployed zabbix zabbix-web; then
     if deployed zabbix "$d"; then check "$d available"; else nope "$d available" "kubectl -n zabbix get deploy $d"; fi
   done
   assert "Zabbix frontend answers on $ZABBIX_URL" curl -sSf --max-time 20 -o /dev/null "$ZABBIX_URL"
-  # Enabling the app is TP5 mission 1, so a disabled plugin is the expected
-  # starting state, not a broken machine. The datasource cannot report
-  # healthy until it's on, so skip that too rather than fail twice.
+  # grafana-values.yaml provisions the app as enabled, so a disabled plugin
+  # means that provisioning did not land — and the datasource will answer
+  # "Unable to select configuration" until it does.
   if gapi /api/plugins/alexanderzobnin-zabbix-app/settings | jq -e '.enabled == true' >/dev/null 2>&1; then
     check "Zabbix Grafana plugin enabled"
-    ds_health zabbix Zabbix zabbix zabbix-web
-  else
-    absent "Zabbix Grafana plugin enabled" "not yet — TP5 has you enable it in Grafana > Plugins > Zabbix"
-    absent "Zabbix datasource healthy" "blocked until the plugin is enabled"
-  fi
+  else nope "Zabbix Grafana plugin enabled" "the grafana_plugin ConfigMap did not reach /etc/grafana/provisioning/plugins"; fi
+  ds_health zabbix Zabbix zabbix zabbix-web
 else absent "Zabbix checks" "deploy/zabbix-web not up — run ./exercises/tp5-zabbix/run.sh (needs ~1.5G RAM)"; fi
 
 section "TP6 — Alerting"

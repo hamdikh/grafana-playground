@@ -30,8 +30,9 @@ Availability passe au vert.
 
 ## Datasource
 
-Provisionnée (`Zabbix`, plugin `alexanderzobnin-zabbix-app` déjà installé
-via `values/grafana-values.yaml`). Sinon à la main : Administration >
+Provisionnée (`Zabbix`, plugin `alexanderzobnin-zabbix-app` installé *et*
+activé via `values/grafana-values.yaml` — l'app est enable dès le
+déploiement, rien à cliquer). Sinon à la main : Administration >
 Plugins > Zabbix > Enable, puis Connections > Add new connection > Zabbix
 (`http://zabbix-web.zabbix.svc.cluster.local:8080/api_jsonrpc.php`, auth
 `Admin`/`zabbix`, Trends actif, After `7d`, Range `4d`, Cache TTL `1h`).

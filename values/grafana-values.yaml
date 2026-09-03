@@ -46,6 +46,32 @@ sidecar:
     label: grafana_alerting
     labelValue: "1"
     searchNamespace: ALL
+  # Installing the Zabbix app (see `plugins:` above) does not enable it, and a
+  # disabled app makes its datasource answer "Unable to select configuration"
+  # — so ship the enablement the same GitOps way, via extraObjects below.
+  plugins:
+    enabled: true
+    label: grafana_plugin
+    labelValue: "1"
+    searchNamespace: ALL
+
+# Enables the Zabbix app at startup. Grafana reads this from
+# /etc/grafana/provisioning/plugins, where the plugins sidecar drops any
+# ConfigMap carrying the grafana_plugin=1 label.
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: grafana-plugin-zabbix
+      labels:
+        grafana_plugin: "1"
+    data:
+      zabbix-app.yaml: |
+        apiVersion: 1
+        apps:
+          - type: alexanderzobnin-zabbix-app
+            org_id: 1
+            disabled: false
 
 # Base datasource set — TestData needs nothing else running. MySQL-Lab,
 # PostgreSQL-Lab and Zabbix show as unhealthy until their manifests are
