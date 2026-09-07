@@ -18,7 +18,7 @@ Docker — Zabbix (TP5) alone needs ~1.5GB, so if you're tight on RAM skip
 ## Quickstart
 
 ```bash
-git clone git@github.com:hamdikh/grafana-playground.git
+git clone https://github.com/hamdikh/grafana-playground.git
 cd grafana-playground
 ./bootstrap.sh          # cluster + Grafana + MySQL + PostgreSQL + Zabbix + alerting
 ./bootstrap.sh status   # what's up and how to reach it

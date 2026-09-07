@@ -3,7 +3,7 @@ adminUser: admin
 adminPassword: Grafana2025!
 
 image:
-  tag: "11.5.2"
+  tag: "13.2.1"
 
 service:
   type: NodePort
