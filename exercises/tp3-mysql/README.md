@@ -121,7 +121,7 @@ FROM incidents WHERE $__timeFilter(opened_at) ORDER BY opened_at DESC
 
 - `env` (Query): `SELECT DISTINCT env FROM metrics ORDER BY env`
 - `host` (Query, Multi-value + Include All):
-  `SELECT DISTINCT host FROM metrics WHERE env IN ($env) ORDER BY host`
+  `SELECT DISTINCT host FROM metrics WHERE env IN (`$env`) ORDER BY host`
 - Dans le `WHERE`, `host IN ($host)` — **sans guillemets** autour de
   `$host` : sur une liste multi-valeurs, Grafana génère déjà
   `'web01','web02'`. Testez avec `'$host'` pour voir l'échec.
