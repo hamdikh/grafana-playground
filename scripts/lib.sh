@@ -43,10 +43,27 @@ reclaim_grafana_replicas() {
     -p '{"metadata":{"managedFields":[{}]}}' >/dev/null
 }
 
+# TP4 part B has you point Grafana's own database at
+# postgres.lab.svc.cluster.local by editing values/grafana-values.yaml.
+# From that edit on Grafana cannot start before PostgreSQL runs — and
+# bootstrap installs Grafana at the tp1 stage, long before the TP4
+# manifest, so the pod crashloops on `dial tcp: lookup
+# postgres.lab.svc.cluster.local: no such host` and every target fails.
+# When the values file asks for postgres, bring postgres up first.
+ensure_grafana_database() {
+  grep -qE '^[[:space:]]*type:[[:space:]]*postgres[[:space:]]*$' \
+    "$REPO_ROOT/values/grafana-values.yaml" || return 0
+  info "grafana-values.yaml stores Grafana in PostgreSQL — deploying it first"
+  kctl create namespace "$NS_LAB" --dry-run=client -o yaml | kctl apply -f - >/dev/null
+  kctl apply -f "$REPO_ROOT/exercises/tp4-postgresql/manifests/postgres.yaml" >/dev/null
+  rollout_wait "$NS_LAB" deploy/postgres
+}
+
 install_grafana() {
   info "installing/upgrading Grafana (Helm, context $CTX)"
   helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
   helm repo update grafana >/dev/null
+  ensure_grafana_database
   reclaim_grafana_replicas
   # Belt and braces: newer Helm can also be told to win the conflict
   # outright. Helm 3 does not know the flag, hence the probe.
