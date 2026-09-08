@@ -60,7 +60,14 @@ data:
     }
 
     mktrigger() { # mktrigger <description> <expression> <priority>
-      api trigger.create "{\"description\":\"$1\",\"expression\":\"$2\",\"priority\":$3}" >/dev/null
+      # Reconciled on every start, not only at host creation: a lab deployed
+      # before a threshold changed picks the new one up on redeploy.
+      tid=$(api trigger.get "{\"filter\":{\"description\":\"$1\"}}" | first_id triggerid)
+      if [ -n "$tid" ]; then
+        api trigger.update "{\"triggerid\":\"$tid\",\"expression\":\"$2\",\"priority\":$3}" >/dev/null
+      else
+        api trigger.create "{\"description\":\"$1\",\"expression\":\"$2\",\"priority\":$3}" >/dev/null
+      fi
     }
 
     for spec in $HOSTS; do
@@ -68,20 +75,23 @@ data:
       hid=$(api host.get "{\"filter\":{\"host\":[\"$h\"]}}" | first_id hostid)
       if [ -n "$hid" ]; then
         echo "host $h already configured (hostid $hid)"
-        continue
+      else
+        hid=$(api host.create "{\"host\":\"$h\",\"groups\":[{\"groupid\":\"$GID\"}]}" | first_id hostids)
+        [ -n "$hid" ] || { echo "cannot create host $h"; exit 1; }
+        echo "created host $h (hostid $hid)"
+
+        mkitem "$hid" app.requests    'Requests (10s)'  3 ''
+        mkitem "$hid" app.errors      'Errors (10s)'    3 ''
+        mkitem "$hid" app.error_rate  'Error rate'      0 '%'
+        mkitem "$hid" app.latency_ms  'Latency p95'     0 'ms'
+        mkitem "$hid" app.users       'Active users'    3 ''
       fi
-      hid=$(api host.create "{\"host\":\"$h\",\"groups\":[{\"groupid\":\"$GID\"}]}" | first_id hostids)
-      [ -n "$hid" ] || { echo "cannot create host $h"; exit 1; }
-      echo "created host $h (hostid $hid)"
 
-      mkitem "$hid" app.requests    'Requests (10s)'  3 ''
-      mkitem "$hid" app.errors      'Errors (10s)'    3 ''
-      mkitem "$hid" app.error_rate  'Error rate'      0 '%'
-      mkitem "$hid" app.latency_ms  'Latency p95'     0 'ms'
-      mkitem "$hid" app.users       'Active users'    3 ''
-
-      mktrigger "High error rate on $h"  "min(/$h/app.error_rate,2m)>10"    4
-      mktrigger "Latency degraded on $h" "avg(/$h/app.latency_ms,3m)>500"   3
+      # Windows are 2 minutes long, so anything asking for a *full* 2-minute
+      # breach (min(...,2m)) would essentially never fire: keep the
+      # evaluation windows strictly shorter than the incident.
+      mktrigger "High error rate on $h"  "avg(/$h/app.error_rate,1m)>10"    4
+      mktrigger "Latency degraded on $h" "avg(/$h/app.latency_ms,1m)>500"   3
       mktrigger "No traffic on $h"       "nodata(/$h/app.requests,5m)=1"    2
     done
     echo "configuration done — sending traffic every 10s"

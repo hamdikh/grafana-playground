@@ -32,9 +32,14 @@ Le débit suit une onde lente (cycle jour/nuit) plutôt qu'un bruit blanc, et
 taux d'erreur au-dessus de 12 % et la latence au-dessus de 650 ms. Trois
 triggers par hôte sont créés avec les items :
 
-- `min(/<host>/app.error_rate,2m)>10` — sévérité High
-- `avg(/<host>/app.latency_ms,3m)>500` — sévérité Average
+- `avg(/<host>/app.error_rate,1m)>10` — sévérité High
+- `avg(/<host>/app.latency_ms,1m)>500` — sévérité Average
 - `nodata(/<host>/app.requests,5m)=1` — sévérité Warning
+
+Noter que les fenêtres d'évaluation (`1m`) sont plus courtes que la fenêtre
+d'incident (2 min) : un `min(/<host>/app.error_rate,2m)>10` demanderait un
+dépassement sur *toute* la fenêtre et ne déclencherait quasiment jamais — le
+piège classique quand on écrit un trigger sur un phénomène bref.
 
 Ils passent donc en *Problem* puis se referment seuls : de quoi remplir un
 panel Problems et voir les annotations apparaître et disparaître sans rien
