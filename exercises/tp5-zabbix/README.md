@@ -46,7 +46,22 @@ panel Problems et voir les annotations apparaître et disparaître sans rien
 provoquer à la main. Compter ~5 minutes après le déploiement pour les
 premières séries, ~10 pour le premier incident.
 
-Les items sont de type **Zabbix trapper** : l'hôte ne collecte rien, c'est le
+L'hôte `Zabbix server`, lui, reçoit deux items poussés en plus de ce que
+l'agent collecte : `lab.queue.depth` (profondeur de file) et
+`lab.service.status` (0/1). Ils suivent la même fenêtre d'incident et
+portent deux triggers supplémentaires :
+
+- `avg(/Zabbix server/lab.queue.depth,1m)>500` — sévérité Average
+- `last(/Zabbix server/lab.service.status)=0` — sévérité High
+
+Le groupe **Zabbix servers** a donc lui aussi des *Problems*, et cet hôte
+devient un cas d'école : ses items `system.cpu.*` sont *collectés* par
+l'agent (le serveur va les chercher), ses items `lab.*` sont *poussés* par
+`zabbix_sender`. Même hôte, deux modes de collecte — le panneau *Latest
+data* de Zabbix les affiche côte à côte sans les distinguer, seule la
+colonne *Type* de la configuration le dit.
+
+Les items applicatifs sont de type **Zabbix trapper** : l'hôte ne collecte rien, c'est le
 générateur qui *pousse* les valeurs avec `zabbix_sender` (port 10051 du
 serveur). C'est le mode qu'on retrouve en production pour tout ce que Zabbix
 ne sait pas aller chercher lui-même — batchs, jobs, scripts métier. Corollaire
@@ -149,7 +164,7 @@ Plugins > Zabbix > Enable, puis Connections > Add new connection > Zabbix
 | Taux d'erreur | Metrics | Group `Lab apps`, Host `/.*/`, Item `Error rate` — seuil à 10 |
 | Latence p95 | Metrics | Group `Lab apps`, Host `/.*/`, Item `Latency p95` |
 | Items serveur | Metrics | Group `Zabbix servers`, Host `Zabbix server`, Item `Zabbix*` |
-| Problèmes | Problems | Group `Lab apps` |
+| Problèmes | Problems | Group `Lab apps` (ou `Zabbix servers`) |
 | Compteur | Triggers | count en état Problem |
 
 Pour les annotations : dans les options du dashboard, *Annotations > New*,
@@ -173,6 +188,7 @@ Datasource Zabbix > onglet Dashboards > importer *Zabbix System Status* et
 
 - Un dashboard Zabbix générique avec métrique, problèmes et annotations.
 - Au moins un *Problem* observé apparaissant puis se refermant tout seul.
+- Savoir dire, pour un item de `Zabbix server`, s'il est collecté ou poussé.
 
 ## Pour aller plus loin
 

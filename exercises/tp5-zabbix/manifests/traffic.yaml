@@ -23,6 +23,9 @@ data:
     API="http://zabbix-web.zabbix.svc.cluster.local:8080/api_jsonrpc.php"
     SERVER="zabbix-server"
     GROUP="Lab apps"
+    # The stock host the agent already monitors. It gets pushed items too,
+    # so the `Zabbix servers` group has Problems of its own.
+    SRV="Zabbix server"
     TOKEN=""
 
     # Each host gets its own traffic profile: rate multiplier and a base
@@ -54,6 +57,10 @@ data:
     [ -n "$GID" ] || { echo "cannot create host group"; exit 1; }
 
     mkitem() { # mkitem <hostid> <key> <name> <value_type> <units>
+      # Checked per item, not per host: new items reach a lab that was
+      # deployed before they existed.
+      iid=$(api item.get "{\"hostids\":\"$1\",\"filter\":{\"key_\":\"$2\"}}" | first_id itemid)
+      [ -z "$iid" ] || return 0
       api item.create "{\"hostid\":\"$1\",\"key_\":\"$2\",\"name\":\"$3\",\
         \"type\":2,\"value_type\":$4,\"units\":\"$5\",\"history\":\"7d\",\"trends\":\"90d\"}" \
         >/dev/null
@@ -79,13 +86,13 @@ data:
         hid=$(api host.create "{\"host\":\"$h\",\"groups\":[{\"groupid\":\"$GID\"}]}" | first_id hostids)
         [ -n "$hid" ] || { echo "cannot create host $h"; exit 1; }
         echo "created host $h (hostid $hid)"
-
-        mkitem "$hid" app.requests    'Requests (10s)'  3 ''
-        mkitem "$hid" app.errors      'Errors (10s)'    3 ''
-        mkitem "$hid" app.error_rate  'Error rate'      0 '%'
-        mkitem "$hid" app.latency_ms  'Latency p95'     0 'ms'
-        mkitem "$hid" app.users       'Active users'    3 ''
       fi
+
+      mkitem "$hid" app.requests    'Requests (10s)'  3 ''
+      mkitem "$hid" app.errors      'Errors (10s)'    3 ''
+      mkitem "$hid" app.error_rate  'Error rate'      0 '%'
+      mkitem "$hid" app.latency_ms  'Latency p95'     0 'ms'
+      mkitem "$hid" app.users       'Active users'    3 ''
 
       # Windows are 2 minutes long, so anything asking for a *full* 2-minute
       # breach (min(...,2m)) would essentially never fire: keep the
@@ -94,6 +101,23 @@ data:
       mktrigger "Latency degraded on $h" "avg(/$h/app.latency_ms,1m)>500"   3
       mktrigger "No traffic on $h"       "nodata(/$h/app.requests,5m)=1"    2
     done
+
+    # `Zabbix server` is monitored by the agent (system.cpu.*, vm.memory.*
+    # and friends). Adding pushed items to it puts both collection modes on
+    # one host — and gives the stock `Zabbix servers` group Problems of its
+    # own, instead of a Problems panel that stays empty all session.
+    srv_id=$(api host.get "{\"filter\":{\"host\":[\"$SRV\"]}}" | first_id hostid)
+    if [ -n "$srv_id" ]; then
+      mkitem "$srv_id" lab.queue.depth   'Job queue depth'   3 ''
+      mkitem "$srv_id" lab.service.status 'Backend service'  3 ''
+      mktrigger "Job queue backlog on $SRV" \
+        "avg(/$SRV/lab.queue.depth,1m)>500" 3
+      mktrigger "Backend service down on $SRV" \
+        "last(/$SRV/lab.service.status)=0"  4
+      echo "equipped $SRV (hostid $srv_id) with pushed items"
+    else
+      echo "host $SRV not found — skipping its items"
+    fi
     echo "configuration done — sending traffic every 10s"
 
     # Continuous feed. One incident window every 10 minutes, lasting 2
@@ -102,7 +126,7 @@ data:
     # Problems panel and the Grafana annotations move.
     while :; do
       now=$(date +%s)
-      awk -v now="$now" -v hosts="$HOSTS" 'BEGIN {
+      awk -v now="$now" -v hosts="$HOSTS" -v srv="$SRV" 'BEGIN {
         srand(now);
         incident = (now % 600 < 120);
         # Slow wave so the request rate looks like a day/night cycle rather
@@ -126,6 +150,11 @@ data:
           printf "\"%s\" app.latency_ms %.1f\n", host, lat;
           printf "\"%s\" app.users %d\n",      host, int(req * 3 + rand() * 60);
         }
+        # Same incident window on the stock host: the queue backs up and the
+        # backend flips to 0 (down), so both triggers open and close with it.
+        printf "\"%s\" lab.queue.depth %d\n", srv, \
+          incident ? int(700 + rand() * 900) : int(40 + rand() * 120);
+        printf "\"%s\" lab.service.status %d\n", srv, incident ? 0 : 1;
       }' | zabbix_sender -z "$SERVER" -p 10051 -i - >/dev/null 2>&1 || true
       sleep 10
     done
