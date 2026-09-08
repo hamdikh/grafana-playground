@@ -165,11 +165,28 @@ Plugins > Zabbix > Enable, puis Connections > Add new connection > Zabbix
 | Latence p95 | Metrics | Group `Lab apps`, Host `/.*/`, Item `Latency p95` |
 | Items serveur | Metrics | Group `Zabbix servers`, Host `Zabbix server`, Item `Zabbix*` |
 | Problèmes | Problems | Group `Lab apps` (ou `Zabbix servers`) |
-| Compteur | Triggers | count en état Problem |
+| Compteur | Triggers | Group `Lab apps`, Host `/.*/`, *Count by* `Problems` — panel Stat |
 
 Pour les annotations : dans les options du dashboard, *Annotations > New*,
 datasource `Zabbix`, group `Lab apps` — les fenêtres d'incident apparaissent
 alors en bandes verticales sous les courbes.
+
+> **Le compteur affiche 0 et c'est normal (8 fois sur 10).** L'aide du
+> plugin le dit : le mode *Triggers* est un « active triggers count » — il
+> compte les triggers **en Problem à l'instant T**, pas sur la plage de
+> temps du dashboard. Or les incidents durent 2 minutes toutes les
+> 10 minutes : hors fenêtre il n'y a réellement aucun problème, donc 0 est
+> la bonne valeur. Les fenêtres sont calées sur l'horloge : **mm:00→mm:02,
+> mm:10→mm:12, mm:20→mm:22**, etc. Regardez le panel à ce moment-là, il
+> passe à 8.
+>
+> Deux vérifications avant d'incriminer Grafana : *Monitoring > Problems*
+> dans Zabbix doit lister les mêmes lignes au même instant, et l'option
+> *Count by* du mode Triggers doit valoir `Problems` (avec `All triggers`
+> vous compteriez les 3 300 triggers livrés par les templates, un nombre
+> jamais nul mais qui ne mesure rien). Un panel Stat sur une valeur
+> instantanée ne se lit pas comme une série : changer la plage de temps du
+> dashboard n'y changera rien.
 
 Fonctions utiles (onglet Functions) : `groupBy(1m, avg)` (agrège chaque
 série individuellement) vs `aggregateBy(1m, avg)` (fusionne toutes les
