@@ -1,0 +1,155 @@
+---
+# TP5 companion: without it Zabbix only monitors itself, and every Grafana
+# panel built on top of it is a flat line. This deployment creates three
+# trapper-fed hosts through the Zabbix API, then feeds them continuously
+# (every 10s) with synthetic application traffic: request rate, error rate,
+# latency, active users — plus a recurring incident window that pushes the
+# error rate over the trigger thresholds so *Problems* and annotations
+# actually appear in Grafana.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zabbix-traffic
+  namespace: zabbix
+data:
+  traffic.sh: |
+    #!/bin/sh
+    # Configure once (idempotent), then send forever. Everything here uses
+    # only what the zabbix-agent2 image already ships: busybox wget for the
+    # JSON-RPC API, busybox awk for the value generator, zabbix_sender for
+    # the trapper protocol.
+    set -eu
+
+    API="http://zabbix-web.zabbix.svc.cluster.local:8080/api_jsonrpc.php"
+    SERVER="zabbix-server"
+    GROUP="Lab apps"
+    TOKEN=""
+
+    # Each host gets its own traffic profile: rate multiplier and a base
+    # error rate in percent. api-01 is the noisy one.
+    HOSTS="lab-web-01:1.0:0.4 lab-web-02:0.7:0.8 lab-api-01:1.6:2.0"
+
+    api() { # api <method> <params-json>
+      wget -qO- --timeout=10 \
+        --header='Content-Type: application/json-rpc' \
+        --header="Authorization: Bearer $TOKEN" \
+        --post-data "{\"jsonrpc\":\"2.0\",\"method\":\"$1\",\"params\":$2,\"id\":1}" \
+        "$API" 2>/dev/null || true
+    }
+
+    first_id() { # first_id <json-key>  — reads stdin, prints the first id
+      sed -n "s/.*\"$1\":\[\{0,1\}\"\([0-9]*\)\".*/\1/p" | head -n1
+    }
+
+    echo "waiting for the Zabbix API..."
+    until api apiinfo.version '[]' | grep -q '"result"'; do sleep 5; done
+
+    TOKEN=$(api user.login '{"username":"Admin","password":"zabbix"}' \
+      | sed -n 's/.*"result":"\([^"]*\)".*/\1/p')
+    [ -n "$TOKEN" ] || { echo "API login failed"; exit 1; }
+    echo "API login ok"
+
+    GID=$(api hostgroup.get "{\"filter\":{\"name\":[\"$GROUP\"]}}" | first_id groupid)
+    [ -n "$GID" ] || GID=$(api hostgroup.create "{\"name\":\"$GROUP\"}" | first_id groupids)
+    [ -n "$GID" ] || { echo "cannot create host group"; exit 1; }
+
+    mkitem() { # mkitem <hostid> <key> <name> <value_type> <units>
+      api item.create "{\"hostid\":\"$1\",\"key_\":\"$2\",\"name\":\"$3\",\
+        \"type\":2,\"value_type\":$4,\"units\":\"$5\",\"history\":\"7d\",\"trends\":\"90d\"}" \
+        >/dev/null
+    }
+
+    mktrigger() { # mktrigger <description> <expression> <priority>
+      api trigger.create "{\"description\":\"$1\",\"expression\":\"$2\",\"priority\":$3}" >/dev/null
+    }
+
+    for spec in $HOSTS; do
+      h=${spec%%:*}
+      hid=$(api host.get "{\"filter\":{\"host\":[\"$h\"]}}" | first_id hostid)
+      if [ -n "$hid" ]; then
+        echo "host $h already configured (hostid $hid)"
+        continue
+      fi
+      hid=$(api host.create "{\"host\":\"$h\",\"groups\":[{\"groupid\":\"$GID\"}]}" | first_id hostids)
+      [ -n "$hid" ] || { echo "cannot create host $h"; exit 1; }
+      echo "created host $h (hostid $hid)"
+
+      mkitem "$hid" app.requests    'Requests (10s)'  3 ''
+      mkitem "$hid" app.errors      'Errors (10s)'    3 ''
+      mkitem "$hid" app.error_rate  'Error rate'      0 '%'
+      mkitem "$hid" app.latency_ms  'Latency p95'     0 'ms'
+      mkitem "$hid" app.users       'Active users'    3 ''
+
+      mktrigger "High error rate on $h"  "min(/$h/app.error_rate,2m)>10"    4
+      mktrigger "Latency degraded on $h" "avg(/$h/app.latency_ms,3m)>500"   3
+      mktrigger "No traffic on $h"       "nodata(/$h/app.requests,5m)=1"    2
+    done
+    echo "configuration done — sending traffic every 10s"
+
+    # Continuous feed. One incident window every 10 minutes, lasting 2
+    # minutes: error rate and latency jump over the thresholds, the triggers
+    # fire, then recover on their own — which is exactly what makes the
+    # Problems panel and the Grafana annotations move.
+    while :; do
+      now=$(date +%s)
+      awk -v now="$now" -v hosts="$HOSTS" 'BEGIN {
+        srand(now);
+        incident = (now % 600 < 120);
+        # Slow wave so the request rate looks like a day/night cycle rather
+        # than pure noise.
+        wave = 1 + 0.45 * sin(now / 900.0);
+        n = split(hosts, spec, " ");
+        for (i = 1; i <= n; i++) {
+          split(spec[i], f, ":");
+          host = f[1]; mult = f[2] + 0; base_err = f[3] + 0;
+          req = int((90 * wave * mult) + rand() * 25);
+          if (incident) {
+            er  = 12 + rand() * 28;
+            lat = 650 + rand() * 900;
+          } else {
+            er  = base_err * (0.5 + rand());
+            lat = 90 + rand() * 170;
+          }
+          printf "\"%s\" app.requests %d\n",   host, req;
+          printf "\"%s\" app.errors %d\n",     host, int(req * er / 100);
+          printf "\"%s\" app.error_rate %.2f\n", host, er;
+          printf "\"%s\" app.latency_ms %.1f\n", host, lat;
+          printf "\"%s\" app.users %d\n",      host, int(req * 3 + rand() * 60);
+        }
+      }' | zabbix_sender -z "$SERVER" -p 10051 -i - >/dev/null 2>&1 || true
+      sleep 10
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zabbix-traffic
+  namespace: zabbix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zabbix-traffic
+  template:
+    metadata:
+      labels:
+        app: zabbix-traffic
+    spec:
+      containers:
+        - name: traffic
+          # Same image as the agent: it already ships zabbix_sender.
+          image: zabbix/zabbix-agent2:alpine-7.0-latest
+          command: ["/bin/sh", "/script/traffic.sh"]
+          volumeMounts:
+            - name: script
+              mountPath: /script
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      volumes:
+        - name: script
+          configMap:
+            name: zabbix-traffic

@@ -43,7 +43,10 @@ case "$target" in
     "$0" tp4
     apply_manifest exercises/tp5-zabbix/manifests/zabbix.yaml
     rollout_wait zabbix deploy/zabbix-web
+    apply_manifest exercises/tp5-zabbix/manifests/traffic.yaml
+    rollout_wait zabbix deploy/zabbix-traffic
     ok "Zabbix ready — http://localhost:8080 (Admin / zabbix)"
+    ok "Trafic synthétique en cours (hosts lab-web-01/02, lab-api-01)"
     ;;
   alerting|tp6)
     "$0" tp4

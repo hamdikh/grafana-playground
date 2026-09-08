@@ -13,6 +13,49 @@ problèmes et annotations. **Durée :** 90 min. **Niveau :** intermédiaire.
 Compter quelques minutes de démarrage (import de schéma). Frontend sur
 http://localhost:8080, `Admin` / `zabbix`.
 
+## Le trafic synthétique
+
+Un Zabbix qui ne supervise que lui-même donne des panels plats : c'est le
+premier réflexe de frustration du TP. `manifests/traffic.yaml` (appliqué par
+`run.sh`) déploie `zabbix-traffic`, qui crée par API trois hôtes applicatifs
+dans le host group **Lab apps** et les alimente **en continu, toutes les
+10 secondes** :
+
+| Hôte | Profil | Items |
+|---|---|---|
+| `lab-web-01` | nominal | `app.requests`, `app.errors`, `app.error_rate` (%) |
+| `lab-web-02` | trafic plus faible | `app.latency_ms` (ms), `app.users` |
+| `lab-api-01` | plus de volume, plus d'erreurs | idem |
+
+Le débit suit une onde lente (cycle jour/nuit) plutôt qu'un bruit blanc, et
+**toutes les 10 minutes une fenêtre d'incident de 2 minutes** fait grimper le
+taux d'erreur au-dessus de 12 % et la latence au-dessus de 650 ms. Trois
+triggers par hôte sont créés avec les items :
+
+- `min(/<host>/app.error_rate,2m)>10` — sévérité High
+- `avg(/<host>/app.latency_ms,3m)>500` — sévérité Average
+- `nodata(/<host>/app.requests,5m)=1` — sévérité Warning
+
+Ils passent donc en *Problem* puis se referment seuls : de quoi remplir un
+panel Problems et voir les annotations apparaître et disparaître sans rien
+provoquer à la main. Compter ~5 minutes après le déploiement pour les
+premières séries, ~10 pour le premier incident.
+
+Les items sont de type **Zabbix trapper** : l'hôte ne collecte rien, c'est le
+générateur qui *pousse* les valeurs avec `zabbix_sender` (port 10051 du
+serveur). C'est le mode qu'on retrouve en production pour tout ce que Zabbix
+ne sait pas aller chercher lui-même — batchs, jobs, scripts métier. Corollaire
+qui surprend souvent : un item trapper n'a pas d'intervalle de collecte, donc
+un trapper muet ne remonte aucune erreur — d'où le trigger `nodata()`.
+
+Le script est dans la ConfigMap `zabbix-traffic` et est idempotent : il
+détecte les hôtes déjà créés et se contente d'émettre. Pour couper le trafic
+(par exemple pour observer `nodata()` déclencher) :
+
+```bash
+kubectl -n zabbix scale deploy/zabbix-traffic --replicas=0
+```
+
 ## Comprendre
 
 ### Le modèle de données Zabbix
@@ -97,16 +140,24 @@ Plugins > Zabbix > Enable, puis Connections > Add new connection > Zabbix
 
 | Panel | Query mode | Réglages |
 |---|---|---|
+| Trafic applicatif | Metrics | Group `Lab apps`, Host `/.*/`, Item `Requests (10s)` |
+| Taux d'erreur | Metrics | Group `Lab apps`, Host `/.*/`, Item `Error rate` — seuil à 10 |
+| Latence p95 | Metrics | Group `Lab apps`, Host `/.*/`, Item `Latency p95` |
 | Items serveur | Metrics | Group `Zabbix servers`, Host `Zabbix server`, Item `Zabbix*` |
-| Problèmes | Problems | Group `Zabbix servers` |
+| Problèmes | Problems | Group `Lab apps` |
 | Compteur | Triggers | count en état Problem |
+
+Pour les annotations : dans les options du dashboard, *Annotations > New*,
+datasource `Zabbix`, group `Lab apps` — les fenêtres d'incident apparaissent
+alors en bandes verticales sous les courbes.
 
 Fonctions utiles (onglet Functions) : `groupBy(1m, avg)` (agrège chaque
 série individuellement) vs `aggregateBy(1m, avg)` (fusionne toutes les
 séries en une), `scale(0.01)`, `movingAverage(10)`, `setAlias(...)`.
 
 Variables `$group` (Group `/.*/`) et `$host` (Host, group `$group`,
-`/.*/`) — Repeat by variable `host` sur un panel.
+`/.*/`) — Repeat by variable `host` sur un panel : avec les trois hôtes de
+`Lab apps`, le repeat produit enfin trois panels distincts.
 
 ## Dashboards livrés
 
@@ -116,6 +167,7 @@ Datasource Zabbix > onglet Dashboards > importer *Zabbix System Status* et
 ## Critères de réussite
 
 - Un dashboard Zabbix générique avec métrique, problèmes et annotations.
+- Au moins un *Problem* observé apparaissant puis se refermant tout seul.
 
 ## Pour aller plus loin
 
