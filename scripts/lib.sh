@@ -28,9 +28,21 @@ install_grafana() {
   info "installing/upgrading Grafana (Helm, context $CTX)"
   helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
   helm repo update grafana >/dev/null
+  # Helm 4 applies server-side, so a field owned by another field manager
+  # makes the upgrade fail instead of being overwritten. TP4 has you run
+  # `kubectl scale deploy/grafana --replicas=2`, which hands .spec.replicas
+  # to the manager `kubectl` with subresource `scale`; every later
+  # bootstrap then dies on `conflict with "kubectl" with subresource
+  # "scale"`. --force-conflicts takes the field back. Helm 3 applies
+  # client-side, never hits this, and does not know the flag.
+  local ssa=()
+  if helm upgrade --help 2>/dev/null | grep -q -- '--force-conflicts'; then
+    ssa=(--force-conflicts)
+  fi
   helm --kube-context "$CTX" upgrade --install grafana grafana/grafana \
     --namespace "$NS_OBS" --create-namespace \
     --values "$REPO_ROOT/values/grafana-values.yaml" \
+    ${ssa[@]+"${ssa[@]}"} \
     --wait --timeout 5m
   ok "Grafana ready — http://localhost:3000 (admin / Grafana2025!)"
 }
