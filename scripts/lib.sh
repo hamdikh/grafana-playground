@@ -57,6 +57,34 @@ ensure_grafana_database() {
   kctl create namespace "$NS_LAB" --dry-run=client -o yaml | kctl apply -f - >/dev/null
   kctl apply -f "$REPO_ROOT/exercises/tp4-postgresql/manifests/postgres.yaml" >/dev/null
   rollout_wait "$NS_LAB" deploy/postgres
+  ensure_grafana_role
+}
+
+# The initdb scripts of postgres.yaml (02-grafana-db.sql, which creates the
+# grafana_app role) run only when the data directory is empty — that is, on
+# the pod's first start. A postgres pod created before that script existed
+# therefore has no grafana_app, and `kubectl apply` updates the ConfigMap
+# without restarting the pod, so it never will. Grafana then fails with
+# `pq: password authentication failed for user "grafana_app" (28P01)`,
+# which Postgres also answers for a role that does not exist at all.
+# Create or realign the role instead of asking anyone to wipe the database.
+ensure_grafana_role() {
+  local psql="psql -U grafana -d postgres -tAc"
+  if kctl -n "$NS_LAB" exec deploy/postgres -- $psql \
+       "SELECT 1 FROM pg_roles WHERE rolname='grafana_app'" 2>/dev/null | grep -q 1; then
+    kctl -n "$NS_LAB" exec deploy/postgres -- $psql \
+      "ALTER ROLE grafana_app WITH LOGIN PASSWORD 'grafanaapp'" >/dev/null
+  else
+    info "creating the grafana_app role (postgres predates 02-grafana-db.sql)"
+    kctl -n "$NS_LAB" exec deploy/postgres -- $psql \
+      "CREATE ROLE grafana_app WITH LOGIN PASSWORD 'grafanaapp'" >/dev/null
+  fi
+  kctl -n "$NS_LAB" exec deploy/postgres -- $psql \
+    "SELECT 1 FROM pg_database WHERE datname='grafana'" 2>/dev/null | grep -q 1 || {
+    info "creating the grafana database"
+    kctl -n "$NS_LAB" exec deploy/postgres -- $psql \
+      "CREATE DATABASE grafana OWNER grafana_app" >/dev/null
+  }
 }
 
 install_grafana() {
