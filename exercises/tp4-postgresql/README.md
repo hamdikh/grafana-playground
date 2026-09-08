@@ -78,7 +78,8 @@ $seuil`.
 
 Par défaut Grafana stocke dashboards/utilisateurs/datasources dans un
 SQLite embarqué — impossible de faire du multi-replica. Basculer sur
-Postgres (ajouter à `values/grafana-values.yaml` avant de réappliquer) :
+Postgres en **créant** `values/grafana-values.local.yaml` (fichier de
+surcharge, ignoré par git) :
 
 ```yaml
 grafana.ini:
@@ -95,9 +96,20 @@ envRenderSecret:
 
 ```bash
 helm --kube-context kind-grafana-lab upgrade grafana grafana/grafana \
-  -n observability -f ../../values/grafana-values.yaml
+  -n observability \
+  -f ../../values/grafana-values.yaml \
+  -f ../../values/grafana-values.local.yaml
 kubectl --context kind-grafana-lab -n observability logs deploy/grafana -c grafana | grep -i migrat
 ```
+
+> Pourquoi un fichier séparé plutôt qu'une modification de
+> `values/grafana-values.yaml` ? Parce que ce dernier est suivi par git :
+> le modifier fait entrer en collision votre exercice avec le moindre `git
+> pull` du lab, et il faut arbitrer à la main. Helm accepte plusieurs `-f`
+> et fusionne le dernier par-dessus les précédents ; `bootstrap.sh` ajoute
+> automatiquement `grafana-values.local.yaml` s'il existe. C'est le patron
+> classique *base + surcharge locale*, celui des `values-prod.yaml` /
+> `values-staging.yaml` en production.
 
 **⚠️ Les dashboards des TP2/TP3 disparaissent** — Grafana crée un schéma
 vierge, il ne migre rien depuis SQLite. C'est un repartir-de-zéro, pas une

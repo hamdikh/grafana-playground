@@ -51,8 +51,8 @@ reclaim_grafana_replicas() {
 # postgres.lab.svc.cluster.local: no such host` and every target fails.
 # When the values file asks for postgres, bring postgres up first.
 ensure_grafana_database() {
-  grep -qE '^[[:space:]]*type:[[:space:]]*postgres[[:space:]]*$' \
-    "$REPO_ROOT/values/grafana-values.yaml" || return 0
+  grep -qhE '^[[:space:]]*type:[[:space:]]*postgres[[:space:]]*$' \
+    "$REPO_ROOT/values/grafana-values.yaml" $(grafana_local_values) || return 0
   info "grafana-values.yaml stores Grafana in PostgreSQL — deploying it first"
   kctl create namespace "$NS_LAB" --dry-run=client -o yaml | kctl apply -f - >/dev/null
   kctl apply -f "$REPO_ROOT/exercises/tp4-postgresql/manifests/postgres.yaml" >/dev/null
@@ -87,6 +87,15 @@ ensure_grafana_role() {
   }
 }
 
+# TP4 part B needs Helm overrides of your own. Editing the tracked
+# values/grafana-values.yaml means every `git pull` collides with your
+# exercise, so put them in values/grafana-values.local.yaml instead: it is
+# gitignored, and Helm merges it over the tracked file when it exists.
+grafana_local_values() {
+  local f="$REPO_ROOT/values/grafana-values.local.yaml"
+  [ -f "$f" ] && printf '%s' "$f"
+}
+
 install_grafana() {
   info "installing/upgrading Grafana (Helm, context $CTX)"
   helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
@@ -99,9 +108,15 @@ install_grafana() {
   if helm upgrade --help 2>/dev/null | grep -q -- '--force-conflicts'; then
     ssa=(--force-conflicts)
   fi
+  local overlay=()
+  if [ -n "$(grafana_local_values)" ]; then
+    info "merging values/grafana-values.local.yaml over the tracked values"
+    overlay=(--values "$(grafana_local_values)")
+  fi
   helm --kube-context "$CTX" upgrade --install grafana grafana/grafana \
     --namespace "$NS_OBS" --create-namespace \
     --values "$REPO_ROOT/values/grafana-values.yaml" \
+    ${overlay[@]+"${overlay[@]}"} \
     ${ssa[@]+"${ssa[@]}"} \
     --wait --timeout 5m
   ok "Grafana ready — http://localhost:3000 (admin / Grafana2025!)"

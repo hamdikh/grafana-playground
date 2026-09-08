@@ -2,3 +2,7 @@
 exercises/extension-multichannel-alerting/alerting-provisioning.yaml
 exercises/extension-multichannel-alerting/alerting-configmap.yaml
 .env
+
+# TP4 part B: your own Helm overrides (Grafana's internal database, etc).
+# Untracked on purpose, so `git pull` never collides with your exercise.
+values/*.local.yaml
