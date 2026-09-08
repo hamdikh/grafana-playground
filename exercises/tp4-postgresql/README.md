@@ -111,22 +111,18 @@ Puis 2 réplicas :
 kubectl --context kind-grafana-lab -n observability scale deploy/grafana --replicas=2
 ```
 
-> **À faire après l'expérience :** revenir à un réplica.
->
-> ```bash
-> kubectl --context kind-grafana-lab -n observability scale deploy/grafana --replicas=1
-> ```
->
-> Ce `scale` impératif n'est pas neutre : il inscrit `kubectl` (subresource
-> `scale`) comme **propriétaire du champ** `.spec.replicas` dans les
-> `managedFields` de l'objet. Helm 4 applique *server-side* et refuse
-> d'écraser un champ possédé par quelqu'un d'autre — un `./bootstrap.sh`
-> ultérieur échoue alors sur `Apply failed with 1 conflict: conflict with
-> "kubectl" with subresource "scale"`, y compris sur des TP qui n'ont rien
-> à voir. `scripts/lib.sh` passe `--force-conflicts` quand le Helm installé
-> le connaît, mais la leçon vaut d'être retenue : mélanger impératif
-> (`kubectl scale`) et déclaratif (Helm, `kubectl apply`) sur le même champ
-> finit toujours par se payer.
+> Rien à nettoyer après : `bootstrap.sh` remet Grafana à un réplica tout
+> seul. Ce `scale` impératif n'est pourtant pas neutre — il inscrit
+> `kubectl` (subresource `scale`) comme **propriétaire du champ**
+> `.spec.replicas` dans les `managedFields` de l'objet, et Helm 4, qui
+> applique *server-side*, refuse d'écraser un champ possédé par quelqu'un
+> d'autre. Sans parade le prochain `./bootstrap.sh` échouerait sur `Apply
+> failed with 1 conflict: conflict with "kubectl" with subresource
+> "scale"`, y compris sur un TP sans rapport. `scripts/lib.sh` reprend le
+> champ avant chaque upgrade (`reclaim_grafana_replicas`) : la leçon à
+> retenir est que mélanger impératif (`kubectl scale`) et déclaratif (Helm,
+> `kubectl apply`) sur le même champ finit toujours par se payer — ici
+> l'outillage paie à votre place.
 
 ## Critères de réussite
 

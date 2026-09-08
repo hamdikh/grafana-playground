@@ -24,17 +24,32 @@ ensure_cluster() {
   kctl cluster-info >/dev/null
 }
 
+# TP4 has the student run `kubectl scale deploy/grafana --replicas=2`. That
+# imperative scale records `kubectl` (subresource `scale`) as the owner of
+# .spec.replicas, and Helm 4 — which applies server-side — then refuses to
+# overwrite a field owned by another manager: every later bootstrap dies on
+# `conflict with "kubectl" with subresource "scale"`, whatever target was
+# asked for. Rather than making the student scale back by hand, take the
+# field back here: drop the recorded ownership (the entries are rebuilt by
+# the next apply) so Helm owns .spec.replicas again. No-op on Helm 3, which
+# applies client-side and never hits this.
+reclaim_grafana_replicas() {
+  kctl -n "$NS_OBS" get deploy grafana >/dev/null 2>&1 || return 0
+  kctl -n "$NS_OBS" get deploy grafana \
+    -o jsonpath='{.metadata.managedFields[*].subresource}' 2>/dev/null \
+    | grep -q scale || return 0
+  info "reclaiming .spec.replicas of deploy/grafana from kubectl scale"
+  kctl -n "$NS_OBS" patch deploy grafana --type=merge \
+    -p '{"metadata":{"managedFields":[{}]}}' >/dev/null
+}
+
 install_grafana() {
   info "installing/upgrading Grafana (Helm, context $CTX)"
   helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
   helm repo update grafana >/dev/null
-  # Helm 4 applies server-side, so a field owned by another field manager
-  # makes the upgrade fail instead of being overwritten. TP4 has you run
-  # `kubectl scale deploy/grafana --replicas=2`, which hands .spec.replicas
-  # to the manager `kubectl` with subresource `scale`; every later
-  # bootstrap then dies on `conflict with "kubectl" with subresource
-  # "scale"`. --force-conflicts takes the field back. Helm 3 applies
-  # client-side, never hits this, and does not know the flag.
+  reclaim_grafana_replicas
+  # Belt and braces: newer Helm can also be told to win the conflict
+  # outright. Helm 3 does not know the flag, hence the probe.
   local ssa=()
   if helm upgrade --help 2>/dev/null | grep -q -- '--force-conflicts'; then
     ssa=(--force-conflicts)
