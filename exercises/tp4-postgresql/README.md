@@ -71,7 +71,7 @@ SELECT host AS "Hote", round(avg(cpu), 2) AS "CPU moyen",
 FROM metrics WHERE $__timeFilter(ts) GROUP BY host ORDER BY 3 DESC
 ```
 
-Variable `seuil` (Text box, défaut `80`) utilisée dans un `HAVING avg(cpu) >
+Variable `seuil` (Text box, par exemple on peut définir la valeur par défaut à `50`) utilisée dans un `HAVING avg(cpu) >
 $seuil`.
 
 ## Partie B — PostgreSQL comme base interne de Grafana
